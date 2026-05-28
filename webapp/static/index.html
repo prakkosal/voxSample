@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>VoxCPM2 TTS</title>
+<style>
+  :root {
+    --bg: #0b0d12;
+    --panel: #151923;
+    --border: #232a39;
+    --text: #e7ecf3;
+    --muted: #8b95a7;
+    --accent: #6aa9ff;
+    --accent-hover: #7fb7ff;
+    --danger: #ff6a6a;
+    --ok: #4ade80;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+  .container {
+    width: 100%;
+    max-width: 720px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 28px;
+  }
+  h1 { margin: 0 0 4px; font-size: 22px; }
+  .subtitle { color: var(--muted); margin-bottom: 24px; font-size: 14px; }
+  label { display: block; margin-top: 16px; font-size: 13px; color: var(--muted); }
+  textarea, input[type="text"], input[type="number"], input[type="file"] {
+    width: 100%;
+    background: #0d1118;
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-size: 14px;
+    margin-top: 6px;
+    font-family: inherit;
+  }
+  textarea { min-height: 110px; resize: vertical; }
+  .row { display: flex; gap: 16px; }
+  .row > div { flex: 1; }
+  input[type="range"] { width: 100%; margin-top: 6px; }
+  .slider-label { display: flex; justify-content: space-between; }
+  button {
+    margin-top: 22px;
+    width: 100%;
+    background: var(--accent);
+    color: #0b0d12;
+    border: none;
+    border-radius: 8px;
+    padding: 12px;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  button:hover:not(:disabled) { background: var(--accent-hover); }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .status {
+    margin-top: 18px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    font-size: 13px;
+    display: none;
+  }
+  .status.show { display: block; }
+  .status.error { background: rgba(255,106,106,0.12); color: var(--danger); border: 1px solid rgba(255,106,106,0.3); }
+  .status.ok { background: rgba(74,222,128,0.1); color: var(--ok); border: 1px solid rgba(74,222,128,0.3); }
+  .audio-section { margin-top: 20px; display: none; }
+  .audio-section.show { display: block; }
+  audio { width: 100%; margin-top: 8px; }
+  .meta { font-size: 12px; color: var(--muted); margin-top: 8px; }
+  .download-link {
+    display: inline-block;
+    margin-top: 8px;
+    color: var(--accent);
+    text-decoration: none;
+    font-size: 13px;
+  }
+  .download-link:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+<div class="container">
+  <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+    <div>
+      <h1>VoxCPM2 TTS</h1>
+      <div class="subtitle">Vast.ai serverless text-to-speech</div>
+    </div>
+    <form method="post" action="/logout" style="margin:0;">
+      <button type="submit" style="margin:0; width:auto; padding:6px 12px; font-size:12px; background:transparent; color:var(--muted); border:1px solid var(--border);">Sign out</button>
+    </form>
+  </div>
+
+  <form id="tts-form">
+    <label for="text">Text</label>
+    <textarea id="text" name="text" required placeholder="Enter text to synthesize..."></textarea>
+
+    <label for="voice_description">Voice description (optional)</label>
+    <input type="text" id="voice_description" name="voice_description"
+           placeholder="e.g. A young woman with a gentle voice" />
+
+    <div class="row">
+      <div>
+        <div class="slider-label">
+          <label for="cfg_value" style="margin: 0;">CFG value</label>
+          <span id="cfg_value_display" style="font-size: 13px;">2.0</span>
+        </div>
+        <input type="range" id="cfg_value" name="cfg_value" min="0.5" max="5" step="0.1" value="2.0" />
+      </div>
+      <div>
+        <div class="slider-label">
+          <label for="inference_timesteps" style="margin: 0;">Inference steps</label>
+          <span id="steps_display" style="font-size: 13px;">25</span>
+        </div>
+        <input type="range" id="inference_timesteps" name="inference_timesteps" min="5" max="50" step="1" value="25" />
+      </div>
+    </div>
+
+    <label for="reference_wav">Reference WAV for voice cloning (optional)</label>
+    <input type="file" id="reference_wav" name="reference_wav" accept="audio/wav,audio/x-wav,audio/*" />
+
+    <button type="submit" id="submit-btn">Generate speech</button>
+  </form>
+
+  <div id="status" class="status"></div>
+
+  <div id="audio-section" class="audio-section">
+    <audio id="audio-player" controls></audio>
+    <div class="meta" id="audio-meta"></div>
+    <a id="download-link" class="download-link" download="output.wav">Download WAV</a>
+  </div>
+</div>
+
+<script>
+  const form = document.getElementById('tts-form');
+  const submitBtn = document.getElementById('submit-btn');
+  const statusEl = document.getElementById('status');
+  const audioSection = document.getElementById('audio-section');
+  const audioPlayer = document.getElementById('audio-player');
+  const audioMeta = document.getElementById('audio-meta');
+  const downloadLink = document.getElementById('download-link');
+  const cfgInput = document.getElementById('cfg_value');
+  const cfgDisplay = document.getElementById('cfg_value_display');
+  const stepsInput = document.getElementById('inference_timesteps');
+  const stepsDisplay = document.getElementById('steps_display');
+
+  cfgInput.addEventListener('input', () => cfgDisplay.textContent = cfgInput.value);
+  stepsInput.addEventListener('input', () => stepsDisplay.textContent = stepsInput.value);
+
+  function showStatus(msg, kind) {
+    statusEl.textContent = msg;
+    statusEl.className = `status show ${kind}`;
+  }
+  function hideStatus() { statusEl.className = 'status'; }
+
+  let currentBlobUrl = null;
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    hideStatus();
+    audioSection.classList.remove('show');
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Generating...';
+    showStatus('Calling Vast.ai endpoint — this may take a moment...', 'ok');
+
+    const fd = new FormData(form);
+    try {
+      const res = await fetch('/api/tts', { method: 'POST', body: fd });
+      if (!res.ok) {
+        let detail = res.statusText;
+        try { const j = await res.json(); detail = j.detail || detail; } catch {}
+        throw new Error(detail);
+      }
+      const sampleRate = res.headers.get('X-Sample-Rate');
+      const duration = res.headers.get('X-Duration-Seconds');
+      const requestId = res.headers.get('X-Request-Id');
+      const blob = await res.blob();
+      if (currentBlobUrl) URL.revokeObjectURL(currentBlobUrl);
+      currentBlobUrl = URL.createObjectURL(blob);
+      audioPlayer.src = currentBlobUrl;
+      downloadLink.href = currentBlobUrl;
+      audioMeta.textContent =
+        `Sample rate: ${sampleRate} Hz · Duration: ${parseFloat(duration).toFixed(2)}s · ID: ${requestId}`;
+      audioSection.classList.add('show');
+      showStatus('Audio generated successfully', 'ok');
+    } catch (err) {
+      showStatus(`Error: ${err.message}`, 'error');
+    } finally {
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Generate speech';
+    }
+  });
+</script>
+</body>
+</html>
