@@ -14,8 +14,8 @@ from vastai.serverless import Serverless
 from vastai.serverless.client.endpoint import Endpoint
 from vastai.serverless.remote import serialization
 
-ROOT = Path(__file__).resolve().parent.parent
-load_dotenv(ROOT / ".env")
+HERE = Path(__file__).resolve().parent
+load_dotenv(HERE / ".env")
 
 VAST_API_KEY = os.getenv("VASTAI_API_KEY")
 VAST_ENDPOINT_ID = os.getenv("VASTAI_ENDPOINT_ID")
